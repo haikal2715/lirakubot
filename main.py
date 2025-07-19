@@ -24,12 +24,12 @@ from telegram.ext import (
 )
 
 # Konfigurasi
-TELEGRAM_TOKEN = "7720606847:AAH-NT6ptPtNqcWeS-KnE9OlTVn3PvbVjts"
-WEBHOOK_URL = "https://yourdomain.com/webhook"
-MIDTRANS_SERVER_KEY = "Mid-server-7066syb35LCzEaOUNjKXUiHJ"
-MIDTRANS_CLIENT_KEY = "Mid-client-PdQTT3NqbaHyQE0Z"
-ADMIN_CHAT_ID = "5715651828"
-EXCHANGE_API_KEY = "b7dae8052fd7953bf7c7f66e"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7720606847:AAH-NT6ptPtNqcWeS-KnE9OlTVn3PvbVjts")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://yourdomain.com/webhook")  
+MIDTRANS_SERVER_KEY = os.getenv("MIDTRANS_SERVER_KEY", "Mid-server-7066syb35LCzEaOUNjKXUiHJ")
+MIDTRANS_CLIENT_KEY = os.getenv("MIDTRANS_CLIENT_KEY", "Mid-client-PdQTT3NqbaHyQE0Z")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "5715651828")
+EXCHANGE_API_KEY = os.getenv("EXCHANGE_API_KEY", "b7dae8052fd7953bf7c7f66e")
 
 # Constants untuk conversation states
 INPUT_NOMINAL, INPUT_NAMA, INPUT_IBAN, PILIH_PEMBAYARAN, UPLOAD_BUKTI = range(5)
