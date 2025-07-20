@@ -89,7 +89,7 @@ app = FastAPI(lifespan=lifespan)
 async def set_webhook():
     """Set webhook URL untuk bot"""
     try:
-        webhook_url = f"{WEBHOOK_URL}/webhook"
+        webhook_url = WEBHOOK_URL  # ✅ BENAR - langsung pakai tanpa /webhook
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
         data = {"url": webhook_url}
         
