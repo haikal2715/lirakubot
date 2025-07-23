@@ -5,7 +5,7 @@ import gspread
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -39,10 +39,18 @@ user_sessions = {}
 # Google Sheets setup
 def setup_google_sheets():
     try:
-        scope = ['https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_SHEETS_CREDS, scope)
-        client = gspread.authorize(creds)
+        # Use modern google-auth instead of oauth2client
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        
+        credentials = Credentials.from_service_account_file(
+            GOOGLE_SHEETS_CREDS, 
+            scopes=scopes
+        )
+        
+        client = gspread.authorize(credentials)
         sheet = client.open(SHEET_NAME).sheet1
         return sheet
     except Exception as e:
