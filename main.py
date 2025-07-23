@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Bot configuration
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_BOT_TOKEN = os.getenv('BOT_TOKEN')
 EXCHANGE_API_KEY = os.getenv('EXCHANGE_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')  # Chat ID admin untuk notifikasi
 
