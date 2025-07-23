@@ -251,11 +251,11 @@ async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rate = get_exchange_rate()
         try_amount = calculate_try_amount(amount, rate)
         
-        text = f"""💸 Jumlah: Rp{formatted_amount}
+        text = f"""👤 Nama: {name}
 🇹🇷 Estimasi TRY: {try_amount:.2f}
 
-Sekarang masukkan nama lengkap Anda:
-(Sesuai dengan yang akan menerima transfer)"""
+👤 Masukkan Nama Lengkap Sesuai Nomor IBAN:
+(Nama harus sama dengan pemilik IBAN)"""
         
         await update.message.reply_text(text, reply_markup=create_back_menu())
         
@@ -272,7 +272,7 @@ async def process_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if len(name) < 2:
         await update.message.reply_text(
-            "❌ Nama terlalu pendek. Masukkan nama lengkap Anda:",
+            "❌ Nama terlalu pendek. 👤 Masukkan Nama Lengkap Sesuai Nomor IBAN:",
             reply_markup=create_back_menu()
         )
         return
@@ -282,7 +282,7 @@ async def process_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = f"""👤 Nama: {name}
 
-Sekarang masukkan nomor IBAN Turki Anda:
+🏦 Sekarang masukkan nomor IBAN Turki Anda:
 (Format: TR diikuti 24 digit angka)
 
 Contoh: TR123456789012345678901234"""
@@ -327,10 +327,11 @@ async def process_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💳 Silakan transfer ke:
 
-Rekening: BCA - {BCA_ACCOUNT}
-Atas Nama: {ACCOUNT_NAME}
+🏦 Bank: BCA
+💳 Rekening: `{BCA_ACCOUNT}`
+👤 Atas Nama: {ACCOUNT_NAME}
 
-Setelah transfer, klik tombol di bawah dan kirim bukti pembayaran ke admin."""
+⚠️ PENTING: Setelah transfer, klik tombol "✅ Saya sudah bayar" dan kirim bukti pembayaran ke admin."""
     
     await update.message.reply_text(
         summary_text,
@@ -401,8 +402,19 @@ async def handle_payment_confirmation(query, context):
     
     confirmation_text = f"""✅ Terima kasih! Pesanan Anda telah diterima.
 
-Silakan kirim bukti transfer ke admin:
-📱 Telegram: @haikal2715
+📥 RINGKASAN PESANAN:
+👤 Nama: {name}
+🏦 IBAN: {iban}
+💰 Total Pembayaran: Rp{format_currency(total_payment)}
+🇹🇷 Estimasi TRY: {try_amount:.2f}
+
+💳 INFORMASI TRANSFER:
+🏦 Bank: BCA
+💳 Rekening: `{BCA_ACCOUNT}`
+👤 Atas Nama: {ACCOUNT_NAME}
+
+📱 Kirim bukti transfer ke admin:
+🔗 Telegram: @haikal2715
 📞 WhatsApp: 087773834406
 
 Lira akan dikirim ke IBAN Anda setelah pembayaran dikonfirmasi.
@@ -442,8 +454,8 @@ Minimal pembelian: Rp100.000"""
         name = session.get('name', '')
         text = f"""💸 Jumlah: Rp{format_currency(session['amount'])}
 
-Sekarang masukkan nama lengkap Anda:
-(Sesuai dengan yang akan menerima transfer)"""
+👤 Masukkan Nama Lengkap Sesuai Nomor IBAN:
+(Nama harus sama dengan pemilik IBAN)"""
         await query.edit_message_text(text, reply_markup=create_back_menu())
 
 def main():
