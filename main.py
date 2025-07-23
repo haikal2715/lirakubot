@@ -251,7 +251,7 @@ async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rate = get_exchange_rate()
         try_amount = calculate_try_amount(amount, rate)
         
-        text = f"""👤 Nama: {name}
+        text = f"""💰 Nominal: Rp{formatted_amount}
 🇹🇷 Estimasi TRY: {try_amount:.2f}
 
 👤 Masukkan Nama Lengkap Sesuai Nomor IBAN:
@@ -451,8 +451,13 @@ Minimal pembelian: Rp100.000"""
         await query.edit_message_text(text, reply_markup=create_back_menu())
     elif step == 'iban':
         session['step'] = 'name'
-        name = session.get('name', '')
-        text = f"""💸 Jumlah: Rp{format_currency(session['amount'])}
+        amount = session.get('amount', 0)
+        formatted_amount = format_currency(amount)
+        rate = get_exchange_rate()
+        try_amount = calculate_try_amount(amount, rate)
+        
+        text = f"""💰 Nominal: Rp{formatted_amount}
+🇹🇷 Estimasi TRY: {try_amount:.2f}
 
 👤 Masukkan Nama Lengkap Sesuai Nomor IBAN:
 (Nama harus sama dengan pemilik IBAN)"""
