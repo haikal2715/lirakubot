@@ -477,9 +477,27 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Start the bot
+from flask import Flask
+import threading
+
+# Dummy Flask server untuk buka port di Render
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return 'LiraKu Bot is running.'
+
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
+
+# Jalankan Flask dan bot Telegram
+def run_all():
+    # Start Flask di thread terpisah
+    threading.Thread(target=run_flask).start()
+
+    # Start Telegram polling
     logger.info("Starting LiraKu Bot...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    main()
+    run_all()
