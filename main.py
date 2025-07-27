@@ -9,7 +9,8 @@ from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+if os.path.exists('.env'):
+    load_dotenv()
 
 # Bot configuration
 TELEGRAM_BOT_TOKEN = os.getenv('BOT_TOKEN')
