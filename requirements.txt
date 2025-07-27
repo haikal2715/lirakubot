@@ -1,13 +1,4 @@
-python-telegram-bot==20.3
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-requests==2.31.0
-python-multipart==0.0.5
-aiofiles==23.2.1
-gspread==5.12.4
-google-auth==2.23.4
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
-midtransclient
-python-dotenv
-flask
+python-telegram-bot==20.7
+requests
+gspread
+oauth2client
