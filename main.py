@@ -22,6 +22,9 @@ ADMIN_FEE = 7000  # Biaya admin Rp7.000
 BCA_ACCOUNT = "7645257260"
 ACCOUNT_NAME = "Muhammad Haikal Sutanto"
 
+# Create Telegram bot application
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
 # Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
