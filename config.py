@@ -1,13 +1,5 @@
-BOT_TOKEN = '7720606847:AAFxuHte4iR9E1LJEko-PQdRD7HwSiDo5Ic'
-ADMIN_ID = 123456789  # ganti dengan Telegram user ID kamu
+import os
+from dotenv import load_dotenv
 
-BCA_ACCOUNT = "5715651828"
-BCA_NAME = "Muhammad Haikal Sutanto"
-ADMIN_IBAN = "TRXXXXXXXXXXXXXXXXXXXX"
-
-GOOGLE_SHEET_NAME = "DATA LIRAKU.ID"
-GOOGLE_CREDENTIALS_FILE = "lirakubot.json"
-
-ADMIN_FEE = 7000
-MARGIN_PERCENT = 3.5
-MIN_BUY_AMOUNT = 100000
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
