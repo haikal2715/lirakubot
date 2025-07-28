@@ -2,18 +2,23 @@ import os
 import logging
 import asyncio
 import requests
+import threading
+import json
 from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
-import gspread
-from google.auth.exceptions import GoogleAuthError
-from google.oauth2.service_account import Credentials
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, 
-    MessageHandler, filters, ContextTypes, ConversationHandler
-)
+try:
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram.ext import (
+        Application, CommandHandler, CallbackQueryHandler, 
+        MessageHandler, filters, ContextTypes, ConversationHandler
+    )
+except ImportError as e:
+    print(f"❌ Error importing telegram libraries: {e}")
+    print("💡 Coba install ulang dengan: pip install --upgrade python-telegram-bot==20.3")
+    exit(1)
 
 # Load environment variables
 load_dotenv()
@@ -129,7 +134,7 @@ def format_currency(amount, currency='IDR'):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
     welcome_message = (
-        " **Selamat datang di LiraKuBot!**\n\n"
+        "💚 **Selamat datang di LiraKuBot!**\n\n"
         "✅ Proses cepat & aman\n"
         "✅ Langsung kirim ke IBAN\n"
         "✅ Lebih hemat dibanding beli di bandara & bank\n\n"
@@ -149,7 +154,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "main_menu":
         welcome_message = (
-            " **Selamat datang di LiraKuBot!**\n\n"
+            "💚 **Selamat datang di LiraKuBot!**\n\n"
             "✅ Proses cepat & aman\n"
             "✅ Langsung kirim ke IBAN\n"
             "✅ Lebih hemat dibanding beli di bandara & bank\n\n"
@@ -387,8 +392,8 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
         'Beli Lira'
     ]
     
-    # Save to sheets
-    if save_to_sheets(transaction_data):
+    # Save transaction
+    if save_transaction(transaction_data):
         # Send notification to admin
         admin_message = (
             "🔔 **Transaksi Baru - Beli Lira**\n\n"
@@ -556,8 +561,8 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
         'Jual Lira'
     ]
     
-    # Save to sheets
-    if save_to_sheets(transaction_data):
+    # Save transaction
+    if save_transaction(transaction_data):
         # Send notification to admin
         admin_message = (
             "🔔 **Transaksi Baru - Jual Lira**\n\n"
@@ -603,48 +608,102 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Main function to run the bot"""
-    # Create application
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add conversation handler for buy lira
-    buy_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler, pattern="^buy_lira$")],
-        states={
-            WAITING_BUY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_amount)],
-            WAITING_BUY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_name)],
-            WAITING_BUY_IBAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_iban)],
-        },
-        fallbacks=[
-            CommandHandler('cancel', cancel),
-            CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
-        ],
-        allow_reentry=True
-    )
-    
-    # Add conversation handler for sell lira
-    sell_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler, pattern="^sell_lira$")],
-        states={
-            WAITING_SELL_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_amount)],
-            WAITING_SELL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_name)],
-            WAITING_SELL_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_account)],
-        },
-        fallbacks=[
-            CommandHandler('cancel', cancel),
-            CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
-        ],
-        allow_reentry=True
-    )
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(buy_conv_handler)
-    application.add_handler(sell_conv_handler)
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Start polling
-    print("🤖 LiraKuBot is running...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # Validate environment variables
+        if not BOT_TOKEN:
+            raise ValueError("BOT_TOKEN tidak ditemukan dalam environment variables")
+        if not EXCHANGE_API_KEY:
+            raise ValueError("EXCHANGE_API_KEY tidak ditemukan dalam environment variables")
+        if not ADMIN_CHAT_ID:
+            raise ValueError("ADMIN_CHAT_ID tidak ditemukan dalam environment variables")
+        
+        # Create application with error handling
+        try:
+            application = Application.builder().token(BOT_TOKEN).build()
+        except Exception as e:
+            logger.error(f"Error creating application: {e}")
+            # Try alternative method
+            from telegram.ext import ApplicationBuilder
+            application = ApplicationBuilder().token(BOT_TOKEN).build()
+        
+        # Add conversation handler for buy lira
+        buy_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(button_handler, pattern="^buy_lira$")],
+            states={
+                WAITING_BUY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_amount)],
+                WAITING_BUY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_name)],
+                WAITING_BUY_IBAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_iban)],
+            },
+            fallbacks=[
+                CommandHandler('cancel', cancel),
+                CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+            ],
+            allow_reentry=True
+        )
+        
+        # Add conversation handler for sell lira
+        sell_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(button_handler, pattern="^sell_lira$")],
+            states={
+                WAITING_SELL_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_amount)],
+                WAITING_SELL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_name)],
+                WAITING_SELL_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_account)],
+            },
+            fallbacks=[
+                CommandHandler('cancel', cancel),
+                CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+            ],
+            allow_reentry=True
+        )
+        
+        # Add handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(buy_conv_handler)
+        application.add_handler(sell_conv_handler)
+        application.add_handler(CallbackQueryHandler(button_handler))
+        
+        # Start polling with error handling
+        print("🤖 LiraKuBot is starting...")
+        logger.info("Bot started successfully")
+        
+        # Use run_polling with proper parameters
+        application.run_polling(
+            timeout=30,
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        
+    except Exception as e:
+        logger.error(f"Critical error starting bot: {e}")
+        print(f"❌ Error starting bot: {e}")
+        return False
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Simple HTTP handler for health checks"""
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'LiraKuBot is running!')
+        
+    def log_message(self, format, *args):
+        # Disable HTTP server logging
+        return
+
+def start_http_server():
+    """Start simple HTTP server for Render health checks"""
+    port = int(os.getenv('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    logger.info(f"HTTP server starting on port {port}")
+    server.serve_forever()
 
 if __name__ == '__main__':
+    # Check if we need HTTP server (for Render Web Service)
+    if os.getenv('RENDER'):
+        # Start HTTP server in background thread
+        http_thread = threading.Thread(target=start_http_server, daemon=True)
+        http_thread.start()
+        logger.info("HTTP server started for Render")
+    
+    # Start the bot
     main()
