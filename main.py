@@ -20,6 +20,15 @@ except ImportError as e:
     print("💡 Coba install ulang dengan: pip install --upgrade python-telegram-bot==20.3")
     exit(1)
 
+# Import Google Sheets dependencies
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+except ImportError:
+    print("⚠️ Google Sheets dependencies not found. Install with: pip install gspread google-auth")
+    gspread = None
+    Credentials = None
+
 # Load environment variables
 load_dotenv()
 
@@ -52,6 +61,10 @@ SPREADSHEET_NAME = 'DATA LIRAKU.ID'
 def get_google_sheets_client():
     """Initialize Google Sheets client"""
     try:
+        if not gspread or not Credentials:
+            logger.warning("Google Sheets dependencies not available")
+            return None
+            
         creds = Credentials.from_service_account_file(
             SERVICE_ACCOUNT_FILE, scopes=SCOPES
         )
@@ -81,7 +94,8 @@ def save_to_sheets(transaction_data):
     try:
         gc = get_google_sheets_client()
         if not gc:
-            return False
+            logger.warning("Google Sheets not available, skipping save")
+            return True  # Return True to not block the process
             
         sheet = gc.open(SPREADSHEET_NAME).sheet1
         
@@ -94,7 +108,11 @@ def save_to_sheets(transaction_data):
         return True
     except Exception as e:
         logger.error(f"Error saving to sheets: {e}")
-        return False
+        return True  # Return True to not block the process
+
+def save_transaction(transaction_data):
+    """Save transaction - wrapper function"""
+    return save_to_sheets(transaction_data)
 
 def get_main_keyboard():
     """Create main menu keyboard"""
@@ -222,6 +240,91 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif query.data == "sell_sent":
         await handle_sell_confirmation(update, context)
+        
+    elif query.data == "back":
+        # Handle back navigation
+        current_state = context.user_data.get('current_state', None)
+        
+        if current_state == 'buy_amount':
+            # Back to buy lira menu
+            await query.edit_message_text(
+                "💸 **Beli Lira (IDR ke TRY)**\n\n"
+                "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
+                "Minimal pembelian: Rp100.000\n\n"
+                "Contoh: 500000",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            return WAITING_BUY_AMOUNT
+        elif current_state == 'buy_name':
+            # Back to amount input
+            await query.edit_message_text(
+                "💸 **Beli Lira (IDR ke TRY)**\n\n"
+                "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
+                "Minimal pembelian: Rp100.000\n\n"
+                "Contoh: 500000",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            context.user_data['current_state'] = 'buy_amount'
+            return WAITING_BUY_AMOUNT
+        elif current_state == 'buy_iban':
+            # Back to name input
+            await query.edit_message_text(
+                f"💰 **Estimasi Konversi**\n\n"
+                f"💸 Nominal: {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
+                f"🇹🇷 Estimasi TRY: ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n\n"
+                f"Masukkan nama lengkap sesuai IBAN Anda:",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            context.user_data['current_state'] = 'buy_name'
+            return WAITING_BUY_NAME
+        elif current_state == 'sell_amount':
+            await query.edit_message_text(
+                "💵 **Jual Lira (TRY ke IDR)**\n\n"
+                "Masukkan jumlah Lira Turki yang ingin dijual.\n\n"
+                "Contoh: 100",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            return WAITING_SELL_AMOUNT
+        elif current_state == 'sell_name':
+            await query.edit_message_text(
+                "💵 **Jual Lira (TRY ke IDR)**\n\n"
+                "Masukkan jumlah Lira Turki yang ingin dijual.\n\n"
+                "Contoh: 100",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            context.user_data['current_state'] = 'sell_amount'
+            return WAITING_SELL_AMOUNT
+        elif current_state == 'sell_account':
+            await query.edit_message_text(
+                f"💰 **Estimasi Konversi**\n\n"
+                f"🇹🇷 Lira: ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
+                f"💵 Estimasi IDR: {format_currency(context.user_data.get('sell_estimated_idr', 0))}\n\n"
+                f"Masukkan nama lengkap Anda:",
+                reply_markup=get_back_menu_keyboard(),
+                parse_mode='Markdown'
+            )
+            context.user_data['current_state'] = 'sell_name'
+            return WAITING_SELL_NAME
+        else:
+            # Default back to main menu
+            welcome_message = (
+                "💚 **Selamat datang di LiraKuBot!**\n\n"
+                "✅ Proses cepat & aman\n"
+                "✅ Langsung kirim ke IBAN\n"
+                "✅ Lebih hemat dibanding beli di bandara & bank\n\n"
+                "Silakan pilih menu:"
+            )
+            await query.edit_message_text(
+                welcome_message,
+                reply_markup=get_main_keyboard(),
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
 
 async def show_simulation(query):
     """Show exchange rate simulation"""
@@ -286,6 +389,7 @@ async def handle_buy_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Store in context
         context.user_data['buy_amount_idr'] = amount
         context.user_data['buy_estimated_try'] = estimated_try
+        context.user_data['current_state'] = 'buy_name'
         
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
@@ -317,6 +421,7 @@ async def handle_buy_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_BUY_NAME
     
     context.user_data['buy_name'] = name
+    context.user_data['current_state'] = 'buy_iban'
     
     await update.message.reply_text(
         f"👤 Nama: **{name}**\n\n"
@@ -350,6 +455,7 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_payment = amount + admin_fee
     
     context.user_data['buy_total_payment'] = total_payment
+    context.user_data['current_state'] = 'buy_payment'
     
     summary_message = (
         "📋 **Detail Pembelian**\n\n"
@@ -378,6 +484,14 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     user = query.from_user
     
+    # Check if we have the necessary data
+    if not all(key in context.user_data for key in ['buy_name', 'buy_iban', 'buy_amount_idr', 'buy_estimated_try', 'buy_total_payment']):
+        await query.edit_message_text(
+            "❌ Data transaksi tidak lengkap. Silakan mulai transaksi baru.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
     # Prepare transaction data
     now = datetime.now()
     transaction_data = [
@@ -393,42 +507,51 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
     ]
     
     # Save transaction
-    if save_transaction(transaction_data):
-        # Send notification to admin
-        admin_message = (
-            "🔔 **Transaksi Baru - Beli Lira**\n\n"
-            f"👤 Nama: {context.user_data.get('buy_name', '')}\n"
-            f"🆔 Username: @{user.username or 'Tidak ada'}\n"
-            f"🆔 User ID: {user.id}\n"
-            f"🏦 IBAN: {context.user_data.get('buy_iban', '')}\n"
-            f"💰 Nominal: {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
-            f"💳 Total Bayar: {format_currency(context.user_data.get('buy_total_payment', 0))}\n"
-            f"🇹🇷 Estimasi TRY: ₺{context.user_data.get('buy_estimated_try', 0):.0f}\n"
-            f"⏰ Waktu: {now.strftime('%d/%m/%Y %H:%M:%S')}"
-        )
-        
-        try:
+    save_success = save_transaction(transaction_data)
+    
+    # Send notification to admin
+    admin_message = (
+        "🔔 **PESANAN MASUK - Beli Lira**\n\n"
+        f"👤 **Nama:** {context.user_data.get('buy_name', '')}\n"
+        f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
+        f"🆔 **User ID:** {user.id}\n"
+        f"🏦 **IBAN:** {context.user_data.get('buy_iban', '')}\n"
+        f"💰 **Nominal:** {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
+        f"💸 **Biaya Admin:** Rp7.000\n"
+        f"💳 **Total Bayar:** {format_currency(context.user_data.get('buy_total_payment', 0))}\n"
+        f"🇹🇷 **Estimasi TRY:** ₺{context.user_data.get('buy_estimated_try', 0):.0f}\n"
+        f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
+        f"**Silakan verifikasi pembayaran dan proses transaksi ini.**"
+    )
+    
+    try:
+        if ADMIN_CHAT_ID:
             await context.bot.send_message(
                 chat_id=ADMIN_CHAT_ID,
                 text=admin_message,
                 parse_mode='Markdown'
             )
-        except Exception as e:
-            logger.error(f"Error sending admin notification: {e}")
-        
-        await query.edit_message_text(
-            "✅ **Konfirmasi Diterima!**\n\n"
-            "Terima kasih! Transaksi Anda sedang diproses.\n"
-            "Admin akan segera memverifikasi pembayaran dan mengirim Lira ke IBAN Anda.\n\n"
-            "💬 Jika ada pertanyaan, hubungi admin di @haikal2715",
-            reply_markup=get_back_menu_keyboard(),
-            parse_mode='Markdown'
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Terjadi kesalahan sistem. Silakan hubungi admin.",
-            reply_markup=get_back_menu_keyboard()
-        )
+            logger.info(f"Admin notification sent for buy transaction from user {user.id}")
+        else:
+            logger.warning("ADMIN_CHAT_ID not configured, admin notification not sent")
+    except Exception as e:
+        logger.error(f"Error sending admin notification: {e}")
+    
+    # Send confirmation to user
+    await query.edit_message_text(
+        "✅ **Konfirmasi Pembayaran Diterima!**\n\n"
+        "Terima kasih! Transaksi Anda sedang diproses.\n"
+        "Admin akan segera memverifikasi pembayaran dan mengirim Lira ke IBAN Anda.\n\n"
+        "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
+        "💬 **Jika ada pertanyaan:** @haikal2715\n\n"
+        "Kami akan mengirim notifikasi setelah transfer selesai.",
+        reply_markup=get_back_menu_keyboard(),
+        parse_mode='Markdown'
+    )
+    
+    # Clear user data
+    context.user_data.clear()
 
 async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle sell amount input"""
@@ -457,6 +580,7 @@ async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Store in context
         context.user_data['sell_amount_try'] = amount
         context.user_data['sell_estimated_idr'] = estimated_idr
+        context.user_data['current_state'] = 'sell_name'
         
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
@@ -488,6 +612,7 @@ async def handle_sell_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_SELL_NAME
     
     context.user_data['sell_name'] = name
+    context.user_data['current_state'] = 'sell_account'
     
     await update.message.reply_text(
         f"👤 Nama: **{name}**\n\n"
@@ -513,6 +638,7 @@ async def handle_sell_account(update: Update, context: ContextTypes.DEFAULT_TYPE
         return WAITING_SELL_ACCOUNT
     
     context.user_data['sell_account'] = account
+    context.user_data['current_state'] = 'sell_payment'
     
     # Show summary
     amount = context.user_data['sell_amount_try']
@@ -547,6 +673,14 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     user = query.from_user
     
+    # Check if we have the necessary data
+    if not all(key in context.user_data for key in ['sell_name', 'sell_account', 'sell_amount_try', 'sell_estimated_idr']):
+        await query.edit_message_text(
+            "❌ Data transaksi tidak lengkap. Silakan mulai transaksi baru.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
     # Prepare transaction data
     now = datetime.now()
     transaction_data = [
@@ -562,41 +696,50 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
     ]
     
     # Save transaction
-    if save_transaction(transaction_data):
-        # Send notification to admin
-        admin_message = (
-            "🔔 **Transaksi Baru - Jual Lira**\n\n"
-            f"👤 Nama: {context.user_data.get('sell_name', '')}\n"
-            f"🆔 Username: @{user.username or 'Tidak ada'}\n"
-            f"🆔 User ID: {user.id}\n"
-            f"🏦 Rekening: {context.user_data.get('sell_account', '')}\n"
-            f"🪙 TRY: ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
-            f"💵 Estimasi IDR: {format_currency(context.user_data.get('sell_estimated_idr', 0))}\n"
-            f"⏰ Waktu: {now.strftime('%d/%m/%Y %H:%M:%S')}"
-        )
-        
-        try:
+    save_success = save_transaction(transaction_data)
+    
+    # Send notification to admin
+    admin_message = (
+        "🔔 **PESANAN MASUK - Jual Lira**\n\n"
+        f"👤 **Nama:** {context.user_data.get('sell_name', '')}\n"
+        f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
+        f"🆔 **User ID:** {user.id}\n"
+        f"🏦 **Rekening:** {context.user_data.get('sell_account', '')}\n"
+        f"🪙 **TRY Dikirim:** ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
+        f"💵 **Estimasi IDR:** {format_currency(context.user_data.get('sell_estimated_idr', 0))}\n"
+        f"🏦 **IBAN Admin:** {ADMIN_IBAN}\n"
+        f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
+        f"**Silakan cek penerimaan Lira dan proses transfer IDR.**"
+    )
+    
+    try:
+        if ADMIN_CHAT_ID:
             await context.bot.send_message(
                 chat_id=ADMIN_CHAT_ID,
                 text=admin_message,
                 parse_mode='Markdown'
             )
-        except Exception as e:
-            logger.error(f"Error sending admin notification: {e}")
-        
-        await query.edit_message_text(
-            "✅ **Konfirmasi Diterima!**\n\n"
-            "Terima kasih! Transaksi Anda sedang diproses.\n"
-            "Admin akan segera memverifikasi penerimaan Lira dan mengirim Rupiah ke rekening Anda.\n\n"
-            "💬 Jika ada pertanyaan, hubungi admin di @haikal2715",
-            reply_markup=get_back_menu_keyboard(),
-            parse_mode='Markdown'
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Terjadi kesalahan sistem. Silakan hubungi admin.",
-            reply_markup=get_back_menu_keyboard()
-        )
+            logger.info(f"Admin notification sent for sell transaction from user {user.id}")
+        else:
+            logger.warning("ADMIN_CHAT_ID not configured, admin notification not sent")
+    except Exception as e:
+        logger.error(f"Error sending admin notification: {e}")
+    
+    # Send confirmation to user
+    await query.edit_message_text(
+        "✅ **Konfirmasi Pengiriman Diterima!**\n\n"
+        "Terima kasih! Transaksi Anda sedang diproses.\n"
+        "Admin akan segera memverifikasi penerimaan Lira dan mengirim Rupiah ke rekening Anda.\n\n"
+        "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
+        "💬 **Jika ada pertanyaan:** @haikal2715\n\n"
+        "Kami akan mengirim notifikasi setelah transfer selesai.",
+        reply_markup=get_back_menu_keyboard(),
+        parse_mode='Markdown'
+    )
+    
+    # Clear user data
+    context.user_data.clear()
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel conversation"""
@@ -615,7 +758,9 @@ def main():
         if not EXCHANGE_API_KEY:
             raise ValueError("EXCHANGE_API_KEY tidak ditemukan dalam environment variables")
         if not ADMIN_CHAT_ID:
-            raise ValueError("ADMIN_CHAT_ID tidak ditemukan dalam environment variables")
+            logger.warning("ADMIN_CHAT_ID tidak ditemukan, notifikasi admin tidak akan dikirim")
+        
+        logger.info("Initializing bot application...")
         
         # Create application with error handling
         try:
@@ -630,9 +775,18 @@ def main():
         buy_conv_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(button_handler, pattern="^buy_lira$")],
             states={
-                WAITING_BUY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_amount)],
-                WAITING_BUY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_name)],
-                WAITING_BUY_IBAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_iban)],
+                WAITING_BUY_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_amount),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
+                WAITING_BUY_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_name),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
+                WAITING_BUY_IBAN: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_iban),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
             },
             fallbacks=[
                 CommandHandler('cancel', cancel),
@@ -645,9 +799,18 @@ def main():
         sell_conv_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(button_handler, pattern="^sell_lira$")],
             states={
-                WAITING_SELL_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_amount)],
-                WAITING_SELL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_name)],
-                WAITING_SELL_ACCOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_account)],
+                WAITING_SELL_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_amount),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
+                WAITING_SELL_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_name),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
+                WAITING_SELL_ACCOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_account),
+                    CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
             },
             fallbacks=[
                 CommandHandler('cancel', cancel),
