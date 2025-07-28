@@ -46,7 +46,7 @@ ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 ADMIN_IBAN = os.getenv('ADMIN_IBAN', 'TR1234567890123456789012345')
 
 # Feature toggles
-BUY_LIRA_ACTIVE = True
+BUY_LIRA_ACTIVE = False
 SELL_LIRA_ACTIVE = True
 
 # Conversation states
