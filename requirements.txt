@@ -1,5 +1,6 @@
-python-telegram-bot==20.7
-requests
+python-telegram-bot==20.6
 gspread
-oauth2client
-python-dotenv
+google-auth
+fastapi
+uvicorn
+requests
