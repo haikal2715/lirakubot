@@ -20,14 +20,9 @@ except ImportError as e:
     print("💡 Coba install ulang dengan: pip install --upgrade python-telegram-bot==20.3")
     exit(1)
 
-# Import Google Sheets dependencies
-try:
-    import gspread
-    from google.oauth2.service_account import Credentials
-except ImportError:
-    print("⚠️ Google Sheets dependencies not found. Install with: pip install gspread google-auth")
-    gspread = None
-    Credentials = None
+# Google Sheets dependencies - disabled for now
+gspread = None
+Credentials = None
 
 # Load environment variables
 load_dotenv()
@@ -39,7 +34,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
+# Configuration - removed Google Sheets references
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 EXCHANGE_API_KEY = os.getenv('EXCHANGE_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
@@ -52,13 +47,6 @@ SELL_LIRA_ACTIVE = True
 # Conversation states
 (WAITING_BUY_AMOUNT, WAITING_BUY_NAME, WAITING_BUY_IBAN, 
  WAITING_SELL_AMOUNT, WAITING_SELL_NAME, WAITING_SELL_ACCOUNT) = range(6)
-
-# Google Sheets setup
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SERVICE_ACCOUNT_FILE = 'lirakubot.json'
-SPREADSHEET_NAME = 'DATA LIRAKU.ID'
-
-def calculate_margin_rate(base_rate, is_buying=True):
     """
     Calculate margin rate with flat 2.5% margin
     """
@@ -74,20 +62,7 @@ def calculate_margin_rate(base_rate, is_buying=True):
     
     return base_rate * margin_multiplier
 
-def get_google_sheets_client():
-    """Initialize Google Sheets client"""
-    try:
-        if not gspread or not Credentials:
-            logger.warning("Google Sheets dependencies not available")
-            return None
-            
-        creds = Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE, scopes=SCOPES
-        )
-        return gspread.authorize(creds)
-    except Exception as e:
-        logger.error(f"Error initializing Google Sheets: {e}")
-        return None
+def calculate_margin_rate(base_rate, is_buying=True):
 
 def get_exchange_rate(from_currency='IDR', to_currency='TRY'):
     """Get exchange rate from exchangerate-api"""
@@ -105,30 +80,12 @@ def get_exchange_rate(from_currency='IDR', to_currency='TRY'):
         logger.error(f"Error fetching exchange rate: {e}")
         return None
 
-def save_to_sheets(transaction_data):
-    """Save transaction to Google Sheets"""
-    try:
-        gc = get_google_sheets_client()
-        if not gc:
-            logger.warning("Google Sheets not available, skipping save")
-            return True  # Return True to not block the process
-            
-        sheet = gc.open(SPREADSHEET_NAME).sheet1
-        
-        # Add headers if sheet is empty
-        if not sheet.get_all_records():
-            headers = ['Waktu', 'Nama', 'IBAN/Rekening', 'IDR', 'TRY', 'Status', 'Username', 'User ID', 'Jenis']
-            sheet.append_row(headers)
-        
-        sheet.append_row(transaction_data)
-        return True
-    except Exception as e:
-        logger.error(f"Error saving to sheets: {e}")
-        return True  # Return True to not block the process
-
 def save_transaction(transaction_data):
-    """Save transaction - wrapper function"""
-    return save_to_sheets(transaction_data)
+    """Save transaction - simplified without Google Sheets"""
+    # For now, just log the transaction data
+    logger.info(f"Transaction data: {transaction_data}")
+    # You can add other storage methods here (database, file, etc.)
+    return True
 
 def get_main_keyboard():
     """Create main menu keyboard"""
