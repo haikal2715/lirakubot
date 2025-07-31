@@ -47,7 +47,7 @@ SELL_LIRA_ACTIVE = True
 # Conversation states
 (WAITING_BUY_AMOUNT, WAITING_BUY_NAME, WAITING_BUY_IBAN, 
  WAITING_SELL_AMOUNT, WAITING_SELL_NAME, WAITING_SELL_ACCOUNT) = range(6)
-    """
+    ""
     Calculate margin rate with flat 2.5% margin
     """
     # Flat 2.5% margin
