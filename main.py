@@ -47,22 +47,22 @@ SELL_LIRA_ACTIVE = True
 # Conversation states
 (WAITING_BUY_AMOUNT, WAITING_BUY_NAME, WAITING_BUY_IBAN, 
  WAITING_SELL_AMOUNT, WAITING_SELL_NAME, WAITING_SELL_ACCOUNT) = range(6)
-    ""
-    Calculate margin rate with flat 2.5% margin
     """
+     Calculate margin rate with flat 2.5% margin
+    """
+def calculate_margin_rate(base_rate, is_buying=True):
     # Flat 2.5% margin
     margin_percent = 2.5
-    
+
     if is_buying:
         # For buying: reduce rate (less TRY for same IDR)
         margin_multiplier = (100 - margin_percent) / 100
     else:
         # For selling: reduce rate (less IDR for same TRY)  
         margin_multiplier = (100 - margin_percent) / 100
-    
+
     return base_rate * margin_multiplier
 
-def calculate_margin_rate(base_rate, is_buying=True):
 
 def get_exchange_rate(from_currency='IDR', to_currency='TRY'):
     """Get exchange rate from exchangerate-api"""
@@ -70,7 +70,7 @@ def get_exchange_rate(from_currency='IDR', to_currency='TRY'):
         url = f"https://v6.exchangerate-api.com/v6/{EXCHANGE_API_KEY}/pair/{from_currency}/{to_currency}"
         response = requests.get(url, timeout=10)
         data = response.json()
-        
+
         if data['result'] == 'success':
             return float(data['conversion_rate'])
         else:
@@ -80,12 +80,14 @@ def get_exchange_rate(from_currency='IDR', to_currency='TRY'):
         logger.error(f"Error fetching exchange rate: {e}")
         return None
 
+
 def save_transaction(transaction_data):
     """Save transaction - simplified without Google Sheets"""
     # For now, just log the transaction data
     logger.info(f"Transaction data: {transaction_data}")
     # You can add other storage methods here (database, file, etc.)
     return True
+
 
 def get_main_keyboard():
     """Create main menu keyboard"""
