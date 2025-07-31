@@ -1,4 +1,18 @@
-import os
+# Send notification to admin
+    admin_message = (
+        "🔔 **PESANAN MASUK - Jual Lira**\n\n"
+        f"👤 **Nama:** {context.user_data.get('sell_name', '')}\n"
+        f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
+        f"🆔 **User ID:** {user.id}\n"
+        f"🏦 **Rekening:** `{context.user_data.get('sell_account', '')}`\n"
+        f"🪙 **TRY Dikirim:** ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
+        f"💵 **Estimasi IDR:** {format_currency(context.user_data.get('sell_estimated_idr', 0))}\n"
+        f"📊 **Margin:** 2.5%\n"
+        f"🏦 **IBAN Admin:** `{ADMIN_IBAN}`\n"
+        f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
+        f"**Silakan cek penerimaan Lira dan proses transfer IDR.**"
+    )import os
 import logging
 import asyncio
 import requests
@@ -57,6 +71,22 @@ SELL_LIRA_ACTIVE = True
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SERVICE_ACCOUNT_FILE = 'lirakubot.json'
 SPREADSHEET_NAME = 'DATA LIRAKU.ID'
+
+def calculate_margin_rate(base_rate, is_buying=True):
+    """
+    Calculate margin rate with flat 2.5% margin
+    """
+    # Flat 2.5% margin
+    margin_percent = 2.5
+    
+    if is_buying:
+        # For buying: reduce rate (less TRY for same IDR)
+        margin_multiplier = (100 - margin_percent) / 100
+    else:
+        # For selling: reduce rate (less IDR for same TRY)  
+        margin_multiplier = (100 - margin_percent) / 100
+    
+    return base_rate * margin_multiplier
 
 def get_google_sheets_client():
     """Initialize Google Sheets client"""
@@ -226,7 +256,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "contact_admin":
         contact_message = (
             "👤 **Kontak Admin**\n\n"
-            "📱 Telegram: @haikal2715\n"
+            "📱 Telegram: @lirakuid\n"
             "📞 WhatsApp: 087773834406"
         )
         await query.edit_message_text(
@@ -338,19 +368,20 @@ async def show_simulation(query):
         )
         return
     
-    # Apply 3.5% margin for IDR to TRY
-    idr_to_try_with_margin = idr_to_try_rate * 0.965
+    # Calculate rates with flat 2.5% margin
+    buy_rate = calculate_margin_rate(idr_to_try_rate, is_buying=True)
+    sell_rate = calculate_margin_rate(try_to_idr_rate, is_buying=False)
     
     simulation_message = (
         "💱 **Simulasi Tukar IDR ke TRY**\n"
-        f"💸 Rp100.000 ≈ 🇹🇷 ₺{100000 * idr_to_try_with_margin:.2f}\n"
-        f"💸 Rp500.000 ≈ 🇹🇷 ₺{500000 * idr_to_try_with_margin:.2f}\n"
-        f"💸 Rp1.000.000 ≈ 🇹🇷 ₺{1000000 * idr_to_try_with_margin:.2f}\n\n"
+        f"💸 Rp100.000 ≈ 🇹🇷 ₺{100000 * buy_rate:.2f}\n"
+        f"💸 Rp500.000 ≈ 🇹🇷 ₺{500000 * buy_rate:.2f}\n"
+        f"💸 Rp1.000.000 ≈ 🇹🇷 ₺{1000000 * buy_rate:.2f}\n\n"
         "💱 **Simulasi Tukar TRY ke IDR**\n"
-        f"🇹🇷 ₺100 ≈ {format_currency(100 * try_to_idr_rate)}\n"
-        f"🇹🇷 ₺500 ≈ {format_currency(500 * try_to_idr_rate)}\n"
-        f"🇹🇷 ₺1.000 ≈ {format_currency(1000 * try_to_idr_rate)}\n\n"
-        f"*Kurs IDR→TRY sudah termasuk margin 3.5%*\n"
+        f"🇹🇷 ₺100 ≈ {format_currency(100 * sell_rate)}\n"
+        f"🇹🇷 ₺500 ≈ {format_currency(500 * sell_rate)}\n"
+        f"🇹🇷 ₺1.000 ≈ {format_currency(1000 * sell_rate)}\n\n"
+        f"*Margin flat 2.5% untuk semua nominal*\n"
         f"*Update: {datetime.now().strftime('%H:%M %d/%m/%Y')}*"
     )
     
@@ -374,16 +405,16 @@ async def handle_buy_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return WAITING_BUY_AMOUNT
         
         # Get exchange rate
-        rate = get_exchange_rate('IDR', 'TRY')
-        if not rate:
+        base_rate = get_exchange_rate('IDR', 'TRY')
+        if not base_rate:
             await update.message.reply_text(
                 "❌ Gagal mengambil data kurs. Silakan coba lagi.",
                 reply_markup=get_back_menu_keyboard()
             )
             return WAITING_BUY_AMOUNT
         
-        # Apply 3.5% margin
-        rate_with_margin = rate * 0.965
+        # Apply flat 2.5% margin
+        rate_with_margin = calculate_margin_rate(base_rate, is_buying=True)
         estimated_try = amount * rate_with_margin
         
         # Store in context
@@ -394,7 +425,8 @@ async def handle_buy_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
             f"💸 Nominal: {format_currency(amount)}\n"
-            f"🇹🇷 Estimasi TRY: ₺{estimated_try:.2f}\n\n"
+            f"🇹🇷 Estimasi TRY: ₺{estimated_try:.2f}\n"
+            f"📊 Margin: 2.5%\n\n"
             f"Masukkan nama lengkap sesuai IBAN Anda:",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -426,7 +458,7 @@ async def handle_buy_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👤 Nama: **{name}**\n\n"
         f"Masukkan IBAN Turki Anda (format: TR + 24 angka)\n"
-        f"Contoh: TR123456789012345678901234",
+        f"Contoh: `TR123456789012345678901234`",
         reply_markup=get_back_menu_keyboard(),
         parse_mode='Markdown'
     )
@@ -441,8 +473,9 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Format IBAN tidak valid.\n"
             "IBAN Turki harus dimulai dengan 'TR' diikuti 24 angka.\n"
-            "Contoh: TR123456789012345678901234",
-            reply_markup=get_back_menu_keyboard()
+            "Contoh: `TR123456789012345678901234`",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
         )
         return WAITING_BUY_IBAN
     
@@ -451,6 +484,7 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Calculate totals
     amount = context.user_data['buy_amount_idr']
     estimated_try = context.user_data['buy_estimated_try']
+    margin_percent = context.user_data['buy_margin_percent']
     admin_fee = 7000
     total_payment = amount + admin_fee
     
@@ -464,7 +498,8 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Nominal: {format_currency(amount)}\n"
         f"💸 Biaya Admin: {format_currency(admin_fee)}\n"
         f"💳 **Total Pembayaran: {format_currency(total_payment)}**\n"
-        f"🇹🇷 Estimasi TRY: ₺{estimated_try:.0f}\n\n"
+        f"🇹🇷 Estimasi TRY: ₺{estimated_try:.0f}\n"
+        f"📊 Margin: {margin_percent}%\n\n"
         f"💳 **Transfer ke:**\n"
         f"🏦 Bank: BCA\n"
         f"💳 Rekening: 7645257260\n"
@@ -515,11 +550,12 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
         f"👤 **Nama:** {context.user_data.get('buy_name', '')}\n"
         f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
         f"🆔 **User ID:** {user.id}\n"
-        f"🏦 **IBAN:** {context.user_data.get('buy_iban', '')}\n"
+        f"🏦 **IBAN:** `{context.user_data.get('buy_iban', '')}`\n"
         f"💰 **Nominal:** {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
-        f"💸 **Biaya Admin:** Rp7.000\n"
+        f"💸 **Biaya Admin (2.5%):** {format_currency(context.user_data.get('buy_admin_fee', 0))}\n"
         f"💳 **Total Bayar:** {format_currency(context.user_data.get('buy_total_payment', 0))}\n"
         f"🇹🇷 **Estimasi TRY:** ₺{context.user_data.get('buy_estimated_try', 0):.0f}\n"
+        f"📊 **Margin:** 2.5%\n"
         f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
         f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
         f"**Silakan verifikasi pembayaran dan proses transaksi ini.**"
@@ -544,7 +580,9 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
         "Terima kasih! Transaksi Anda sedang diproses.\n"
         "Admin akan segera memverifikasi pembayaran dan mengirim Lira ke IBAN Anda.\n\n"
         "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
-        "💬 **Jika ada pertanyaan:** @haikal2715\n\n"
+        "💬 **Jika ada pertanyaan:** @lirakuid\n\n"
+        f"🏦 **Rekening BCA Kami:** `7645257260`\n"
+        f"👤 **a.n.** Muhammad Haikal Sutanto\n\n"
         "Kami akan mengirim notifikasi setelah transfer selesai.",
         reply_markup=get_back_menu_keyboard(),
         parse_mode='Markdown'
@@ -567,15 +605,17 @@ async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return WAITING_SELL_AMOUNT
         
         # Get exchange rate
-        rate = get_exchange_rate('TRY', 'IDR')
-        if not rate:
+        base_rate = get_exchange_rate('TRY', 'IDR')
+        if not base_rate:
             await update.message.reply_text(
                 "❌ Gagal mengambil data kurs. Silakan coba lagi.",
                 reply_markup=get_back_menu_keyboard()
             )
             return WAITING_SELL_AMOUNT
         
-        estimated_idr = amount * rate
+        # Apply flat 2.5% margin
+        rate_with_margin = calculate_margin_rate(base_rate, is_buying=False)
+        estimated_idr = amount * rate_with_margin
         
         # Store in context
         context.user_data['sell_amount_try'] = amount
@@ -585,7 +625,8 @@ async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
             f"🇹🇷 Lira: ₺{amount:,.2f}\n"
-            f"💵 Estimasi IDR: {format_currency(estimated_idr)}\n\n"
+            f"💵 Estimasi IDR: {format_currency(estimated_idr)}\n"
+            f"📊 Margin: 2.5%\n\n"
             f"Masukkan nama lengkap Anda:",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -618,7 +659,7 @@ async def handle_sell_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 Nama: **{name}**\n\n"
         f"Masukkan nomor rekening bank Indonesia Anda.\n"
         f"Format: [Nama Bank] - [Nomor Rekening]\n"
-        f"Contoh: BCA - 1234567890",
+        f"Contoh: `BCA - 1234567890`",
         reply_markup=get_back_menu_keyboard(),
         parse_mode='Markdown'
     )
@@ -632,8 +673,9 @@ async def handle_sell_account(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "❌ Format rekening tidak valid.\n"
             "Format: [Nama Bank] - [Nomor Rekening]\n"
-            "Contoh: BCA - 1234567890",
-            reply_markup=get_back_menu_keyboard()
+            "Contoh: `BCA - 1234567890`",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
         )
         return WAITING_SELL_ACCOUNT
     
@@ -643,15 +685,23 @@ async def handle_sell_account(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Show summary
     amount = context.user_data['sell_amount_try']
     estimated_idr = context.user_data['sell_estimated_idr']
+    admin_fee = int(estimated_idr * 0.025)  # 2.5% fee from estimated IDR
+    final_idr = estimated_idr - admin_fee
+    
+    context.user_data['sell_admin_fee'] = admin_fee
+    context.user_data['sell_final_idr'] = final_idr
     
     summary_message = (
         "📋 **Penjualan Lira**\n\n"
         f"👤 Nama: {context.user_data['sell_name']}\n"
-        f"🏦 Rekening: {account}\n"
+        f"🏦 Rekening: `{account}`\n"
         f"🪙 TRY: ₺{amount:,.2f}\n"
-        f"💵 Estimasi Rupiah: {format_currency(estimated_idr)}\n\n"
+        f"💵 Estimasi IDR: {format_currency(estimated_idr)}\n"
+        f"💸 Biaya Admin (2.5%): {format_currency(admin_fee)}\n"
+        f"💳 **IDR yang Anda terima: {format_currency(final_idr)}**\n"
+        f"📊 Margin: 2.5%\n\n"
         f"🏦 **Kirim Lira ke IBAN Admin:**\n"
-        f"📋 {ADMIN_IBAN}\n\n"
+        f"`{ADMIN_IBAN}`\n\n"
         f"Setelah mengirim, klik tombol di bawah:"
     )
     
@@ -699,6 +749,7 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
     save_success = save_transaction(transaction_data)
     
     # Send notification to admin
+    margin_percent = context.user_data.get('sell_margin_percent', 0)
     admin_message = (
         "🔔 **PESANAN MASUK - Jual Lira**\n\n"
         f"👤 **Nama:** {context.user_data.get('sell_name', '')}\n"
@@ -707,6 +758,7 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
         f"🏦 **Rekening:** {context.user_data.get('sell_account', '')}\n"
         f"🪙 **TRY Dikirim:** ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
         f"💵 **Estimasi IDR:** {format_currency(context.user_data.get('sell_estimated_idr', 0))}\n"
+        f"📊 **Margin:** {margin_percent}%\n"
         f"🏦 **IBAN Admin:** {ADMIN_IBAN}\n"
         f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
         f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
@@ -732,7 +784,7 @@ async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT
         "Terima kasih! Transaksi Anda sedang diproses.\n"
         "Admin akan segera memverifikasi penerimaan Lira dan mengirim Rupiah ke rekening Anda.\n\n"
         "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
-        "💬 **Jika ada pertanyaan:** @haikal2715\n\n"
+        "💬 **Jika ada pertanyaan:** @lirakuid\n\n"
         "Kami akan mengirim notifikasi setelah transfer selesai.",
         reply_markup=get_back_menu_keyboard(),
         parse_mode='Markdown'
