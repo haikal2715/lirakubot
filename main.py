@@ -53,8 +53,8 @@ SELL_LIRA_ACTIVE = True
 ADMIN_FEE = 5000  # 5,000 IDR admin fee
 
 # Conversation states
-(WAITING_BUY_AMOUNT, WAITING_BUY_NAME, WAITING_BUY_IBAN, 
- WAITING_SELL_AMOUNT, WAITING_SELL_NAME, WAITING_SELL_ACCOUNT) = range(6)
+(WAITING_BUY_AMOUNT, WAITING_BUY_NAME, WAITING_BUY_IBAN, WAITING_BUY_CONFIRMATION,
+ WAITING_SELL_AMOUNT, WAITING_SELL_NAME, WAITING_SELL_ACCOUNT, WAITING_SELL_CONFIRMATION) = range(8)
 
 # Google Sheets setup
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -135,6 +135,15 @@ def get_back_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_confirmation_keyboard():
+    """Create confirmation keyboard"""
+    keyboard = [
+        [InlineKeyboardButton("✅ Data Sudah Benar", callback_data="confirm_transaction")],
+        [InlineKeyboardButton("🔙 Kembali", callback_data="back")],
+        [InlineKeyboardButton("🏠 Menu Utama", callback_data="main_menu")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def get_payment_keyboard():
     """Create payment confirmation keyboard"""
     keyboard = [
@@ -199,8 +208,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "💸 **Beli Lira (IDR ke TRY)**\n\n"
             "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
-            "Minimal pembelian: Rp100.000\n"
-            "Biaya admin: Rp5.000\n\n"
+            "Minimal pembelian: Rp100.000\n\n"
             "Contoh: 500000",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -217,8 +225,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             "💵 **Jual Lira (TRY ke IDR)**\n\n"
-            "Masukkan jumlah Lira Turki yang ingin dijual.\n"
-            "Biaya admin: Rp5.000\n\n"
+            "Masukkan jumlah Lira Turki yang ingin dijual.\n\n"
             "Contoh: 100",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -240,6 +247,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
+    elif query.data == "confirm_transaction":
+        await handle_transaction_confirmation(update, context)
+
     elif query.data == "payment_sent":
         await handle_payment_confirmation(update, context)
 
@@ -247,97 +257,111 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_sell_confirmation(update, context)
 
     elif query.data == "back":
-        # Handle back navigation
-        current_state = context.user_data.get('current_state', None)
+        await handle_back_navigation(update, context)
 
-        if current_state == 'buy_amount':
-            # Back to buy lira menu
-            await query.edit_message_text(
-                "💸 **Beli Lira (IDR ke TRY)**\n\n"
-                "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
-                "Minimal pembelian: Rp100.000\n"
-                "Biaya admin: Rp5.000\n\n"
-                "Contoh: 500000",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            return WAITING_BUY_AMOUNT
-        elif current_state == 'buy_name':
-            # Back to amount input
-            await query.edit_message_text(
-                "💸 **Beli Lira (IDR ke TRY)**\n\n"
-                "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
-                "Minimal pembelian: Rp100.000\n"
-                "Biaya admin: Rp5.000\n\n"
-                "Contoh: 500000",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            context.user_data['current_state'] = 'buy_amount'
-            return WAITING_BUY_AMOUNT
-        elif current_state == 'buy_iban':
-            # Back to name input
-            await query.edit_message_text(
-                f"💰 **Estimasi Konversi**\n\n"
-                f"💸 Nominal untuk konversi: {format_currency(context.user_data.get('buy_conversion_amount', 0))}\n"
-                f"🇹🇷 Estimasi TRY: ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n"
-                f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-                f"💰 Total pembayaran: {format_currency(context.user_data.get('buy_total_payment', 0))}\n\n"
-                f"Masukkan nama lengkap sesuai IBAN Anda:",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            context.user_data['current_state'] = 'buy_name'
-            return WAITING_BUY_NAME
-        elif current_state == 'sell_amount':
-            await query.edit_message_text(
-                "💵 **Jual Lira (TRY ke IDR)**\n\n"
-                "Masukkan jumlah Lira Turki yang ingin dijual.\n"
-                "Biaya admin: Rp5.000\n\n"
-                "Contoh: 100",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            return WAITING_SELL_AMOUNT
-        elif current_state == 'sell_name':
-            await query.edit_message_text(
-                "💵 **Jual Lira (TRY ke IDR)**\n\n"
-                "Masukkan jumlah Lira Turki yang ingin dijual.\n"
-                "Biaya admin: Rp5.000\n\n"
-                "Contoh: 100",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            context.user_data['current_state'] = 'sell_amount'
-            return WAITING_SELL_AMOUNT
-        elif current_state == 'sell_account':
-            await query.edit_message_text(
-                f"💰 **Estimasi Konversi**\n\n"
-                f"🇹🇷 Lira: ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
-                f"💵 Estimasi IDR (sebelum potongan): {format_currency(context.user_data.get('sell_estimated_idr_gross', 0))}\n"
-                f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-                f"💰 IDR yang Anda terima: {format_currency(context.user_data.get('sell_estimated_idr_net', 0))}\n\n"
-                f"Masukkan nama lengkap Anda:",
-                reply_markup=get_back_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            context.user_data['current_state'] = 'sell_name'
-            return WAITING_SELL_NAME
-        else:
-            # Default back to main menu
-            welcome_message = (
-                "💚 **Selamat datang di LiraKuBot!**\n\n"
-                "✅ Proses cepat & aman\n"
-                "✅ Langsung kirim ke IBAN\n"
-                "✅ Lebih hemat dibanding beli di bandara & bank\n\n"
-                "Silakan pilih menu:"
-            )
-            await query.edit_message_text(
-                welcome_message,
-                reply_markup=get_main_keyboard(),
-                parse_mode='Markdown'
-            )
-            return ConversationHandler.END
+async def handle_back_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle back navigation"""
+    query = update.callback_query
+    current_state = context.user_data.get('current_state', None)
+
+    if current_state == 'buy_amount':
+        await query.edit_message_text(
+            "💸 **Beli Lira (IDR ke TRY)**\n\n"
+            "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
+            "Minimal pembelian: Rp100.000\n\n"
+            "Contoh: 500000",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        return WAITING_BUY_AMOUNT
+    elif current_state == 'buy_name':
+        await query.edit_message_text(
+            "💸 **Beli Lira (IDR ke TRY)**\n\n"
+            "Masukkan nominal dalam Rupiah yang ingin dikonversi ke Lira Turki.\n"
+            "Minimal pembelian: Rp100.000\n\n"
+            "Contoh: 500000",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'buy_amount'
+        return WAITING_BUY_AMOUNT
+    elif current_state == 'buy_iban':
+        await query.edit_message_text(
+            f"💰 **Estimasi Konversi**\n\n"
+            f"💸 Nominal: {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
+            f"🇹🇷 Estimasi TRY: ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n\n"
+            f"Masukkan nama lengkap sesuai IBAN Anda:",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'buy_name'
+        return WAITING_BUY_NAME
+    elif current_state == 'buy_confirmation':
+        await query.edit_message_text(
+            f"👤 Nama: **{context.user_data.get('buy_name', '')}**\n\n"
+            f"Masukkan IBAN Turki Anda (format: TR + 24 angka)\n"
+            f"Contoh: `TR123456789012345678901234`",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'buy_iban'
+        return WAITING_BUY_IBAN
+    elif current_state == 'sell_amount':
+        await query.edit_message_text(
+            "💵 **Jual Lira (TRY ke IDR)**\n\n"
+            "Masukkan jumlah Lira Turki yang ingin dijual.\n\n"
+            "Contoh: 100",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        return WAITING_SELL_AMOUNT
+    elif current_state == 'sell_name':
+        await query.edit_message_text(
+            "💵 **Jual Lira (TRY ke IDR)**\n\n"
+            "Masukkan jumlah Lira Turki yang ingin dijual.\n\n"
+            "Contoh: 100",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'sell_amount'
+        return WAITING_SELL_AMOUNT
+    elif current_state == 'sell_account':
+        await query.edit_message_text(
+            f"💰 **Estimasi Konversi**\n\n"
+            f"🇹🇷 Lira: ₺{context.user_data.get('sell_amount_try', 0):,.2f}\n"
+            f"💵 Estimasi IDR: {format_currency(context.user_data.get('sell_estimated_idr_gross', 0))}\n\n"
+            f"Masukkan nama lengkap Anda:",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'sell_name'
+        return WAITING_SELL_NAME
+    elif current_state == 'sell_confirmation':
+        await query.edit_message_text(
+            f"👤 Nama: **{context.user_data.get('sell_name', '')}**\n\n"
+            "Masukkan nomor rekening bank Indonesia Anda.\n"
+            "Format: [Nama Bank] - [Nomor Rekening]\n"
+            "Contoh: `BCA - 1234567890`",
+            reply_markup=get_back_menu_keyboard(),
+            parse_mode='Markdown'
+        )
+        context.user_data['current_state'] = 'sell_account'
+        return WAITING_SELL_ACCOUNT
+    else:
+        # Default back to main menu
+        welcome_message = (
+            "💚 **Selamat datang di LiraKuBot!**\n\n"
+            "✅ Proses cepat & aman\n"
+            "✅ Langsung kirim ke IBAN\n"
+            "✅ Lebih hemat dibanding beli di bandara & bank\n\n"
+            "Silakan pilih menu:"
+        )
+        await query.edit_message_text(
+            welcome_message,
+            reply_markup=get_main_keyboard(),
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
 
 async def show_simulation(query):
     """Show exchange rate simulation"""
@@ -354,19 +378,14 @@ async def show_simulation(query):
     # Calculate simulation values with 2.5% margin (hidden from user)
     simulation_message = (
         "💱 **Simulasi Tukar IDR ke TRY**\n"
-        f"💸 Rp100.000 + Biaya admin Rp5.000 = Total Rp105.000\n"
-        f"   → 🇹🇷 ₺{(95000 * idr_to_try_rate * 0.975):.2f}\n"
-        f"💸 Rp500.000 + Biaya admin Rp5.000 = Total Rp505.000\n"
-        f"   → 🇹🇷 ₺{(495000 * idr_to_try_rate * 0.975):.2f}\n"
-        f"💸 Rp1.000.000 + Biaya admin Rp5.000 = Total Rp1.005.000\n"
-        f"   → 🇹🇷 ₺{(995000 * idr_to_try_rate * 0.975):.2f}\n\n"
+        f"💸 Rp100.000 → 🇹🇷 ₺{(100000 * idr_to_try_rate * 0.975):.2f}\n"
+        f"💸 Rp500.000 → 🇹🇷 ₺{(500000 * idr_to_try_rate * 0.975):.2f}\n"
+        f"💸 Rp1.000.000 → 🇹🇷 ₺{(1000000 * idr_to_try_rate * 0.975):.2f}\n\n"
         "💱 **Simulasi Tukar TRY ke IDR**\n"
-        f"🇹🇷 ₺100 → {format_currency(100 * try_to_idr_rate * 0.975 - ADMIN_FEE)}\n"
-        f"   (Setelah dikurangi biaya admin Rp5.000)\n"
-        f"🇹🇷 ₺500 → {format_currency(500 * try_to_idr_rate * 0.975 - ADMIN_FEE)}\n"
-        f"   (Setelah dikurangi biaya admin Rp5.000)\n"
-        f"🇹🇷 ₺1.000 → {format_currency(1000 * try_to_idr_rate * 0.975 - ADMIN_FEE)}\n"
-        f"   (Setelah dikurangi biaya admin Rp5.000)\n\n"
+        f"🇹🇷 ₺100 → {format_currency(100 * try_to_idr_rate * 0.975)}\n"
+        f"🇹🇷 ₺500 → {format_currency(500 * try_to_idr_rate * 0.975)}\n"
+        f"🇹🇷 ₺1.000 → {format_currency(1000 * try_to_idr_rate * 0.975)}\n\n"
+        f"*Simulasi di atas belum termasuk biaya admin*\n"
         f"*Update: {datetime.now().strftime('%H:%M %d/%m/%Y')}*"
     )
 
@@ -398,25 +417,18 @@ async def handle_buy_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return WAITING_BUY_AMOUNT
 
-        # Calculate conversion amount (total - admin fee)
-        conversion_amount = amount  # Amount user enters is for conversion
-        total_payment = conversion_amount + ADMIN_FEE  # Add admin fee
-
         # Calculate TRY with 2.5% margin (hidden from user)
-        estimated_try = conversion_amount * base_rate * 0.975  # 97.5% dari nilai sebenarnya
+        estimated_try = amount * base_rate * 0.975
 
         # Store in context
-        context.user_data['buy_conversion_amount'] = conversion_amount
-        context.user_data['buy_total_payment'] = total_payment
+        context.user_data['buy_amount_idr'] = amount
         context.user_data['buy_estimated_try'] = estimated_try
         context.user_data['current_state'] = 'buy_name'
 
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
-            f"💸 Nominal untuk konversi: {format_currency(conversion_amount)}\n"
-            f"🇹🇷 Estimasi TRY: ₺{estimated_try:.2f}\n"
-            f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-            f"💰 Total pembayaran: {format_currency(total_payment)}\n\n"
+            f"💸 Nominal: {format_currency(amount)}\n"
+            f"🇹🇷 Estimasi TRY: ₺{estimated_try:.2f}\n\n"
             f"Masukkan nama lengkap sesuai IBAN Anda:",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -456,9 +468,9 @@ async def handle_buy_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle buy IBAN input"""
-    iban = update.message.text.strip().upper().replace(' ', '')  # Remove spaces
+    iban = update.message.text.strip().upper().replace(' ', '')
 
-    # More flexible IBAN validation with range
+    # IBAN validation
     if not iban.startswith('TR'):
         await update.message.reply_text(
             "❌ IBAN harus dimulai dengan 'TR' untuk Turki.\n"
@@ -468,7 +480,6 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WAITING_BUY_IBAN
     
-    # Turkish IBAN should be 26 characters total, but allow some flexibility (24-28 chars)
     if len(iban) < 24:
         await update.message.reply_text(
             f"❌ IBAN terlalu pendek.\n"
@@ -493,7 +504,6 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WAITING_BUY_IBAN
     
-    # Check if characters after TR are digits
     if not iban[2:].isdigit():
         await update.message.reply_text(
             "❌ IBAN harus berupa 'TR' diikuti angka saja.\n"
@@ -505,116 +515,32 @@ async def handle_buy_iban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_BUY_IBAN
 
     context.user_data['buy_iban'] = iban
+    context.user_data['current_state'] = 'buy_confirmation'
 
-    # Get stored values
-    conversion_amount = context.user_data['buy_conversion_amount']
-    total_payment = context.user_data['buy_total_payment']
+    # Show confirmation with admin fee
+    amount = context.user_data['buy_amount_idr']
     estimated_try = context.user_data['buy_estimated_try']
+    total_payment = amount + ADMIN_FEE
 
-    context.user_data['current_state'] = 'buy_payment'
+    context.user_data['buy_total_payment'] = total_payment
 
-    summary_message = (
-        "📋 **Detail Pembelian**\n\n"
-        f"👤 Nama: {context.user_data['buy_name']}\n"
-        f"🏦 IBAN: `{iban}`\n"
-        f"💸 Nominal konversi: {format_currency(conversion_amount)}\n"
-        f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-        f"💰 Total pembayaran: {format_currency(total_payment)}\n"
-        f"🇹🇷 TRY yang Anda terima: ₺{estimated_try:.2f}\n\n"
-        f"💳 **Transfer ke:**\n"
-        f"🏦 Bank: BCA\n"
-        f"💳 Rekening: `7645257260`\n"
-        f"👤 a.n. Muhammad Haikal Sutanto\n\n"
-        f"Setelah transfer, klik tombol di bawah:"
+    confirmation_message = (
+        "📋 **Konfirmasi Detail Pembelian**\n\n"
+        f"👤 **Nama:** {context.user_data['buy_name']}\n"
+        f"🏦 **IBAN:** `{iban}`\n"
+        f"💸 **Nominal konversi:** {format_currency(amount)}\n"
+        f"🇹🇷 **TRY yang diterima:** ₺{estimated_try:.2f}\n"
+        f"💼 **Biaya admin:** {format_currency(ADMIN_FEE)}\n"
+        f"💰 **Total pembayaran:** {format_currency(total_payment)}\n\n"
+        f"Apakah data sudah benar?"
     )
 
     await update.message.reply_text(
-        summary_message,
-        reply_markup=get_payment_keyboard(),
+        confirmation_message,
+        reply_markup=get_confirmation_keyboard(),
         parse_mode='Markdown'
     )
-    return ConversationHandler.END
-
-async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle payment confirmation"""
-    query = update.callback_query
-    user = query.from_user
-
-    # Check if we have the necessary data
-    if not all(key in context.user_data for key in ['buy_name', 'buy_iban', 'buy_conversion_amount', 'buy_total_payment', 'buy_estimated_try']):
-        await query.edit_message_text(
-            "❌ Data transaksi tidak lengkap. Silakan mulai transaksi baru.",
-            reply_markup=get_main_keyboard()
-        )
-        return
-
-    # Prepare transaction data
-    now = datetime.now()
-    transaction_data = [
-        now.strftime('%Y-%m-%d %H:%M:%S'),
-        context.user_data.get('buy_name', ''),
-        context.user_data.get('buy_iban', ''),
-        context.user_data.get('buy_total_payment', 0),
-        round(context.user_data.get('buy_estimated_try', 0), 2),
-        'Menunggu Konfirmasi',
-        user.username or '',
-        str(user.id),
-        'Beli Lira'
-    ]
-
-    # Save transaction
-    save_success = save_transaction(transaction_data)
-
-    # Send notification to admin (show margin details for admin)
-    admin_message = (
-        "🔔 **PESANAN MASUK - Beli Lira**\n\n"
-        f"👤 **Nama:** {context.user_data.get('buy_name', '')}\n"
-        f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
-        f"🆔 **User ID:** {user.id}\n"
-        f"🏦 **IBAN:** `{context.user_data.get('buy_iban', '')}`\n"
-        f"💸 **Nominal konversi:** {format_currency(context.user_data.get('buy_conversion_amount', 0))}\n"
-        f"💼 **Biaya admin:** {format_currency(ADMIN_FEE)}\n"
-        f"💰 **Total pembayaran:** {format_currency(context.user_data.get('buy_total_payment', 0))}\n"
-        f"🇹🇷 **TRY Dikirim:** ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n"
-        f"📊 **Margin tersembunyi:** 2.5% dari konversi\n"
-        f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
-        f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
-        f"**Silakan verifikasi pembayaran dan proses transaksi ini.**"
-    )
-
-    try:
-        if ADMIN_CHAT_ID:
-            await context.bot.send_message(
-                chat_id=ADMIN_CHAT_ID,
-                text=admin_message,
-                parse_mode='Markdown'
-            )
-            logger.info(f"Admin notification sent for buy transaction from user {user.id}")
-        else:
-            logger.warning("ADMIN_CHAT_ID not configured, admin notification not sent")
-    except Exception as e:
-        logger.error(f"Error sending admin notification: {e}")
-
-    # Send confirmation to user (no margin mentioned)
-    await query.edit_message_text(
-        "✅ **Konfirmasi Pembayaran Diterima!**\n\n"
-        "Terima kasih! Transaksi Anda sedang diproses.\n"
-        "Admin akan segera memverifikasi pembayaran dan mengirim Lira ke IBAN Anda.\n\n"
-        f"🏦 **Detail Transfer Anda:**\n"
-        f"💳 Rekening: `7645257260` (BCA)\n"
-        f"👤 a.n. Muhammad Haikal Sutanto\n"
-        f"💰 Jumlah: {format_currency(context.user_data.get('buy_total_payment', 0))}\n\n"
-        f"🇹🇷 **IBAN Tujuan:** `{context.user_data.get('buy_iban', '')}`\n"
-        f"₺ **TRY yang akan diterima:** ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n\n"
-        "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
-        "💬 **Jika ada pertanyaan:** @lirakuid\n\n"
-        "Kami akan mengirim notifikasi setelah transfer selesai.",
-        reply_markup=get_back_menu_keyboard(),
-        parse_mode='Markdown'
-    )
-
-    # Clear user data
-    context.user_data.clear()
+    return WAITING_BUY_CONFIRMATION
 
 async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle sell amount input"""
@@ -638,32 +564,18 @@ async def handle_sell_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return WAITING_SELL_AMOUNT
 
-        # Calculate dengan margin 2.5% dari total (hidden from user)
-        # User dapat IDR yang 2.5% lebih sedikit dari nilai sebenarnya, minus admin fee
-        estimated_idr_gross = amount * base_rate * 0.975  # 97.5% dari nilai sebenarnya
-        estimated_idr_net = estimated_idr_gross - ADMIN_FEE  # Minus admin fee
-
-        # Check if result is positive
-        if estimated_idr_net <= 0:
-            await update.message.reply_text(
-                "❌ Jumlah Lira terlalu kecil. Setelah dikurangi biaya admin, nilai akan negatif.\n"
-                "Silakan masukkan jumlah yang lebih besar.",
-                reply_markup=get_back_menu_keyboard()
-            )
-            return WAITING_SELL_AMOUNT
+        # Calculate dengan margin 2.5% (hidden from user)
+        estimated_idr_gross = amount * base_rate * 0.975
 
         # Store in context
         context.user_data['sell_amount_try'] = amount
         context.user_data['sell_estimated_idr_gross'] = estimated_idr_gross
-        context.user_data['sell_estimated_idr_net'] = estimated_idr_net
         context.user_data['current_state'] = 'sell_name'
 
         await update.message.reply_text(
             f"💰 **Estimasi Konversi**\n\n"
             f"🇹🇷 Lira: ₺{amount:,.2f}\n"
-            f"💵 Estimasi IDR (sebelum potongan): {format_currency(estimated_idr_gross)}\n"
-            f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-            f"💰 IDR yang Anda terima: {format_currency(estimated_idr_net)}\n\n"
+            f"💵 Estimasi IDR: {format_currency(estimated_idr_gross)}\n\n"
             f"Masukkan nama lengkap Anda:",
             reply_markup=get_back_menu_keyboard(),
             parse_mode='Markdown'
@@ -717,38 +629,185 @@ async def handle_sell_account(update: Update, context: ContextTypes.DEFAULT_TYPE
         return WAITING_SELL_ACCOUNT
 
     context.user_data['sell_account'] = account
-    context.user_data['current_state'] = 'sell_payment'
+    context.user_data['current_state'] = 'sell_confirmation'
 
-    # Show summary
+    # Show confirmation with admin fee
     amount = context.user_data['sell_amount_try']
     estimated_idr_gross = context.user_data['sell_estimated_idr_gross']
-    estimated_idr_net = context.user_data['sell_estimated_idr_net']
+    estimated_idr_net = estimated_idr_gross - ADMIN_FEE
 
-    summary_message = (
-        "📋 **Detail Penjualan Lira**\n\n"
-        f"👤 Nama: {context.user_data['sell_name']}\n"
-        f"🏦 Rekening: `{account}`\n"
-        f"🪙 TRY yang Anda kirim: ₺{amount:,.2f}\n"
-        f"💵 IDR (sebelum potongan): {format_currency(estimated_idr_gross)}\n"
-        f"💼 Biaya admin: {format_currency(ADMIN_FEE)}\n"
-        f"💰 IDR yang Anda terima: {format_currency(estimated_idr_net)}\n\n"
-        f"🏦 **Kirim Lira ke IBAN Admin:**\n"
-        f"`{ADMIN_IBAN}`\n\n"
-        f"Setelah mengirim, klik tombol di bawah:"
+    # Check if result is positive
+    if estimated_idr_net <= 0:
+        await update.message.reply_text(
+            "❌ Jumlah Lira terlalu kecil. Setelah dikurangi biaya admin, nilai akan negatif.\n"
+            "Silakan masukkan jumlah yang lebih besar.",
+            reply_markup=get_back_menu_keyboard()
+        )
+        context.user_data['current_state'] = 'sell_account'
+        return WAITING_SELL_ACCOUNT
+
+    context.user_data['sell_estimated_idr_net'] = estimated_idr_net
+
+    confirmation_message = (
+        "📋 **Konfirmasi Detail Penjualan**\n\n"
+        f"👤 **Nama:** {context.user_data['sell_name']}\n"
+        f"🏦 **Rekening:** `{account}`\n"
+        f"🪙 **TRY yang dikirim:** ₺{amount:,.2f}\n"
+        f"💵 **IDR sebelum potongan:** {format_currency(estimated_idr_gross)}\n"
+        f"💼 **Biaya admin:** {format_currency(ADMIN_FEE)}\n"
+        f"💰 **IDR yang diterima:** {format_currency(estimated_idr_net)}\n\n"
+        f"Apakah data sudah benar?"
     )
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Saya sudah kirim", callback_data="sell_sent")],
-        [InlineKeyboardButton("🔙 Kembali", callback_data="back")],
-        [InlineKeyboardButton("🏠 Menu Utama", callback_data="main_menu")]
-    ]
 
     await update.message.reply_text(
-        summary_message,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        confirmation_message,
+        reply_markup=get_confirmation_keyboard(),
         parse_mode='Markdown'
     )
+    return WAITING_SELL_CONFIRMATION
+
+async def handle_transaction_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle transaction confirmation"""
+    query = update.callback_query
+    current_state = context.user_data.get('current_state')
+
+    if current_state == 'buy_confirmation':
+        # Show payment details for buy transaction
+        amount = context.user_data['buy_amount_idr']
+        estimated_try = context.user_data['buy_estimated_try']
+        total_payment = context.user_data['buy_total_payment']
+        iban = context.user_data['buy_iban']
+
+        payment_message = (
+            "💳 **Detail Pembayaran**\n\n"
+            f"👤 **Nama:** {context.user_data['buy_name']}\n"
+            f"🏦 **IBAN:** `{iban}`\n"
+            f"🇹🇷 **TRY yang diterima:** ₺{estimated_try:.2f}\n"
+            f"💰 **Total pembayaran:** {format_currency(total_payment)}\n\n"
+            f"💳 **Transfer ke:**\n"
+            f"🏦 Bank: BCA\n"
+            f"💳 Rekening: `7645257260`\n"
+            f"👤 a.n. Muhammad Haikal Sutanto\n\n"
+            f"Setelah transfer, klik tombol di bawah:"
+        )
+
+        await query.edit_message_text(
+            payment_message,
+            reply_markup=get_payment_keyboard(),
+            parse_mode='Markdown'
+        )
+
+    elif current_state == 'sell_confirmation':
+        # Show transfer details for sell transaction
+        amount = context.user_data['sell_amount_try']
+        estimated_idr_net = context.user_data['sell_estimated_idr_net']
+        account = context.user_data['sell_account']
+
+        transfer_message = (
+            "💸 **Detail Transfer Lira**\n\n"
+            f"👤 **Nama:** {context.user_data['sell_name']}\n"
+            f"🏦 **Rekening Anda:** `{account}`\n"
+            f"🪙 **TRY yang dikirim:** ₺{amount:,.2f}\n"
+            f"💰 **IDR yang diterima:** {format_currency(estimated_idr_net)}\n\n"
+            f"🏦 **Kirim Lira ke IBAN Admin:**\n"
+            f"`{ADMIN_IBAN}`\n\n"
+            f"Setelah mengirim, klik tombol di bawah:"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("✅ Saya sudah kirim", callback_data="sell_sent")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="back")],
+            [InlineKeyboardButton("🏠 Menu Utama", callback_data="main_menu")]
+        ]
+
+        await query.edit_message_text(
+            transfer_message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
     return ConversationHandler.END
+
+async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle payment confirmation"""
+    query = update.callback_query
+    user = query.from_user
+
+    # Check if we have the necessary data
+    if not all(key in context.user_data for key in ['buy_name', 'buy_iban', 'buy_amount_idr', 'buy_estimated_try', 'buy_total_payment']):
+        await query.edit_message_text(
+            "❌ Data transaksi tidak lengkap. Silakan mulai transaksi baru.",
+            reply_markup=get_main_keyboard()
+        )
+        return
+
+    # Prepare transaction data
+    now = datetime.now()
+    transaction_data = [
+        now.strftime('%Y-%m-%d %H:%M:%S'),
+        context.user_data.get('buy_name', ''),
+        context.user_data.get('buy_iban', ''),
+        context.user_data.get('buy_total_payment', 0),
+        round(context.user_data.get('buy_estimated_try', 0), 2),
+        'Menunggu Konfirmasi',
+        user.username or '',
+        str(user.id),
+        'Beli Lira'
+    ]
+
+    # Save transaction
+    save_success = save_transaction(transaction_data)
+
+    # Send notification to admin (show margin details for admin)
+    admin_message = (
+        "🔔 **PESANAN MASUK - Beli Lira**\n\n"
+        f"👤 **Nama:** {context.user_data.get('buy_name', '')}\n"
+        f"🆔 **Username:** @{user.username or 'Tidak ada'}\n"
+        f"🆔 **User ID:** {user.id}\n"
+        f"🏦 **IBAN:** `{context.user_data.get('buy_iban', '')}`\n"
+        f"💸 **Nominal konversi:** {format_currency(context.user_data.get('buy_amount_idr', 0))}\n"
+        f"💼 **Biaya admin:** {format_currency(ADMIN_FEE)}\n"
+        f"💰 **Total pembayaran:** {format_currency(context.user_data.get('buy_total_payment', 0))}\n"
+        f"🇹🇷 **TRY Dikirim:** ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n"
+        f"📊 **Margin tersembunyi:** 2.5% dari konversi\n"
+        f"⏰ **Waktu:** {now.strftime('%d/%m/%Y %H:%M:%S')}\n"
+        f"💾 **Status Simpan:** {'✅ Berhasil' if save_success else '❌ Gagal'}\n\n"
+        f"**Silakan verifikasi pembayaran dan proses transaksi ini.**"
+    )
+
+    try:
+        if ADMIN_CHAT_ID:
+            await context.bot.send_message(
+                chat_id=ADMIN_CHAT_ID,
+                text=admin_message,
+                parse_mode='Markdown'
+            )
+            logger.info(f"Admin notification sent for buy transaction from user {user.id}")
+        else:
+            logger.warning("ADMIN_CHAT_ID not configured, admin notification not sent")
+    except Exception as e:
+        logger.error(f"Error sending admin notification: {e}")
+
+    # Send confirmation to user (no margin mentioned)
+    await query.edit_message_text(
+        "✅ **Konfirmasi Pembayaran Diterima!**\n\n"
+        "Terima kasih! Transaksi Anda sedang diproses.\n"
+        "Admin akan segera memverifikasi pembayaran dan mengirim Lira ke IBAN Anda.\n\n"
+        f"🏦 **Detail Transfer Anda:**\n"
+        f"💳 Rekening: `7645257260` (BCA)\n"
+        f"👤 a.n. Muhammad Haikal Sutanto\n"
+        f"💰 Jumlah: {format_currency(context.user_data.get('buy_total_payment', 0))}\n\n"
+        f"🇹🇷 **IBAN Tujuan:** `{context.user_data.get('buy_iban', '')}`\n"
+        f"₺ **TRY yang akan diterima:** ₺{context.user_data.get('buy_estimated_try', 0):.2f}\n\n"
+        "📱 **Estimasi Waktu Proses:** 5-15 menit\n"
+        "💬 **Jika ada pertanyaan:** @lirakuid\n\n"
+        "Kami akan mengirim notifikasi setelah transfer selesai.",
+        reply_markup=get_back_menu_keyboard(),
+        parse_mode='Markdown'
+    )
+
+    # Clear user data
+    context.user_data.clear()
 
 async def handle_sell_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle sell confirmation"""
@@ -878,6 +937,9 @@ def main():
                     MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buy_iban),
                     CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
                 ],
+                WAITING_BUY_CONFIRMATION: [
+                    CallbackQueryHandler(button_handler, pattern="^(confirm_transaction|back|main_menu)$")
+                ],
             },
             fallbacks=[
                 CommandHandler('cancel', cancel),
@@ -901,6 +963,9 @@ def main():
                 WAITING_SELL_ACCOUNT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sell_account),
                     CallbackQueryHandler(button_handler, pattern="^(back|main_menu)$")
+                ],
+                WAITING_SELL_CONFIRMATION: [
+                    CallbackQueryHandler(button_handler, pattern="^(confirm_transaction|back|main_menu)$")
                 ],
             },
             fallbacks=[
