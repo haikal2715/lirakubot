@@ -13,6 +13,6 @@ ports:
 
 envs:
   - key: BOT_TOKEN
-    value: ${BOT_TOKEN}
+    value: ${7720606847:AAHSkrBGj1Q4mQZAaEOJXTiZEp_y9518pfM}
   - key: EXCHANGE_API_KEY
-    value: ${EXCHANGE_API_KEY}
+    value: ${b7dae8052fd7953bf7c7f66e}
